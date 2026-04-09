@@ -1,132 +1,118 @@
 import tkinter as tk
 from tkinter import messagebox
-from db_connection import connect_db
-from datetime import datetime
+import mysql.connector
 
-# ---------------- LOGIN ---------------- #
+# -------- DATABASE CONNECTION --------
+conn = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="your_password",  # change this
+    database="leave_management"
+)
+cursor = conn.cursor()
 
+# -------- LOGIN FUNCTION --------
 def login():
     email = email_entry.get()
     password = password_entry.get()
 
-    conn = connect_db()
-    cursor = conn.cursor()
+    query = "SELECT emp_id, name FROM employees WHERE email=%s AND password=%s"
+    cursor.execute(query, (email, password))
+    result = cursor.fetchone()
 
-    cursor.execute("SELECT emp_id, role FROM employees WHERE email=%s AND password=%s",
-                   (email, password))
-    user = cursor.fetchone()
-
-    if user:
-        messagebox.showinfo("Success", "Login Successful")
+    if result:
         root.destroy()
-        if user[1] == "admin":
-            admin_panel()
-        else:
-            employee_panel(user[0])
+        open_dashboard(result[0], result[1])
     else:
-        messagebox.showerror("Error", "Invalid Login")
+        messagebox.showerror("Error", "Invalid Credentials")
 
-    conn.close()
 
-# ---------------- ADMIN PANEL ---------------- #
+# -------- APPLY LEAVE --------
+def apply_leave(emp_id):
+    leave_type = type_entry.get()
+    from_date = from_entry.get()
+    to_date = to_entry.get()
+    reason = reason_entry.get()
 
-def admin_panel():
-    admin = tk.Tk()
-    admin.title("Admin Panel")
+    query = """
+    INSERT INTO leave_applications 
+    (emp_id, leave_type, from_date, to_date, reason, status)
+    VALUES (%s, %s, %s, %s, %s, 'Pending')
+    """
+    cursor.execute(query, (emp_id, leave_type, from_date, to_date, reason))
+    conn.commit()
 
-    def view_leaves():
-        conn = connect_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM leave_applications")
-        data = cursor.fetchall()
-        messagebox.showinfo("All Leaves", str(data))
-        conn.close()
+    messagebox.showinfo("Success", "Leave Applied!")
 
-    def approve_leave():
-        leave_id = leave_id_entry.get()
-        conn = connect_db()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE leave_applications SET status='Approved' WHERE leave_id=%s",
-                       (leave_id,))
-        conn.commit()
-        messagebox.showinfo("Success", "Leave Approved")
-        conn.close()
 
-    tk.Button(admin, text="View Leaves", command=view_leaves).pack()
-    tk.Label(admin, text="Leave ID").pack()
-    leave_id_entry = tk.Entry(admin)
-    leave_id_entry.pack()
-    tk.Button(admin, text="Approve Leave", command=approve_leave).pack()
+# -------- VIEW HISTORY --------
+def view_history(emp_id):
+    history_window = tk.Toplevel()
+    history_window.title("Leave History")
+    history_window.geometry("600x300")
 
-    admin.mainloop()
+    query = "SELECT leave_id, leave_type, from_date, to_date, reason, status FROM leave_applications WHERE emp_id=%s"
+    cursor.execute(query, (emp_id,))
+    data = cursor.fetchall()
 
-# ---------------- EMPLOYEE PANEL ---------------- #
+    for i, row in enumerate(data):
+        for j, val in enumerate(row):
+            tk.Label(history_window, text=val, borderwidth=1, relief="solid", width=12).grid(row=i, column=j)
 
-def employee_panel(emp_id):
-    emp = tk.Tk()
-    emp.title("Employee Panel")
 
-    def apply_leave():
-        leave_type = type_entry.get()
-        from_date = from_entry.get()
-        to_date = to_entry.get()
-        reason = reason_entry.get()
+# -------- DASHBOARD --------
+def open_dashboard(emp_id, name):
+    global type_entry, from_entry, to_entry, reason_entry
 
-        conn = connect_db()
-        cursor = conn.cursor()
+    dash = tk.Tk()
+    dash.title("Apply Leave")
+    dash.geometry("400x400")
+    dash.configure(bg="#1e2a38")
 
-        cursor.execute("""INSERT INTO leave_applications 
-                          (emp_id, leave_type, from_date, to_date, reason) 
-                          VALUES (%s,%s,%s,%s,%s)""",
-                       (emp_id, leave_type, from_date, to_date, reason))
-        conn.commit()
+    tk.Label(dash, text="Apply Leave", fg="cyan", bg="#1e2a38", font=("Arial", 16)).pack(pady=10)
 
-        messagebox.showinfo("Success", "Leave Applied")
-        conn.close()
-
-    def view_history():
-        conn = connect_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM leave_applications WHERE emp_id=%s",
-                       (emp_id,))
-        data = cursor.fetchall()
-        messagebox.showinfo("Leave History", str(data))
-        conn.close()
-
-    tk.Label(emp, text="Leave Type").pack()
-    type_entry = tk.Entry(emp)
+    tk.Label(dash, text="Leave Type", bg="#1e2a38", fg="white").pack()
+    type_entry = tk.Entry(dash)
     type_entry.pack()
 
-    tk.Label(emp, text="From Date (YYYY-MM-DD)").pack()
-    from_entry = tk.Entry(emp)
+    tk.Label(dash, text="From Date (YYYY-MM-DD)", bg="#1e2a38", fg="white").pack()
+    from_entry = tk.Entry(dash)
     from_entry.pack()
 
-    tk.Label(emp, text="To Date (YYYY-MM-DD)").pack()
-    to_entry = tk.Entry(emp)
+    tk.Label(dash, text="To Date (YYYY-MM-DD)", bg="#1e2a38", fg="white").pack()
+    to_entry = tk.Entry(dash)
     to_entry.pack()
 
-    tk.Label(emp, text="Reason").pack()
-    reason_entry = tk.Entry(emp)
+    tk.Label(dash, text="Reason", bg="#1e2a38", fg="white").pack()
+    reason_entry = tk.Entry(dash)
     reason_entry.pack()
 
-    tk.Button(emp, text="Apply Leave", command=apply_leave).pack()
-    tk.Button(emp, text="View History", command=view_history).pack()
+    tk.Button(dash, text="Apply Leave", bg="blue", fg="white",
+              command=lambda: apply_leave(emp_id)).pack(pady=10)
 
-    emp.mainloop()
+    tk.Button(dash, text="View History", bg="blue", fg="white",
+              command=lambda: view_history(emp_id)).pack()
 
-# ---------------- MAIN LOGIN WINDOW ---------------- #
+    dash.mainloop()
 
+
+# -------- LOGIN UI --------
 root = tk.Tk()
 root.title("Leave Management System")
+root.geometry("400x300")
+root.configure(bg="#1e2a38")
 
-tk.Label(root, text="Email").pack()
-email_entry = tk.Entry(root)
+tk.Label(root, text="Leave Management System", fg="cyan", bg="#1e2a38",
+         font=("Arial", 16)).pack(pady=20)
+
+tk.Label(root, text="Email", bg="#1e2a38", fg="white").pack()
+email_entry = tk.Entry(root, width=30)
 email_entry.pack()
 
-tk.Label(root, text="Password").pack()
-password_entry = tk.Entry(root, show="*")
+tk.Label(root, text="Password", bg="#1e2a38", fg="white").pack()
+password_entry = tk.Entry(root, show="*", width=30)
 password_entry.pack()
 
-tk.Button(root, text="Login", command=login).pack()
+tk.Button(root, text="Login", bg="blue", fg="white", command=login).pack(pady=20)
 
 root.mainloop()
